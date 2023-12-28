@@ -397,35 +397,40 @@ class Neopixel : public LedDriver, public DmaClient
 	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
 	void estimateCurrentAndLimitBri(uint8_t *buffer, uint32_t size) {
 		//power limit calculation
-		//each LED can draw up 195075 "power units" (approx. 53mA)
+		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 53mA)
 		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
 		//so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
 
 		uint16_t pLen = 490; // leds count
 		uint16_t ablMilliampsMax = 5000; // Max PSU Current
-		uint16_t milliampsPerLed = 55; // Current per single led at 100% white
+		uint16_t milliampsPerLed = 38; // Current per single led at 100% white
+		uint16_t milliampsIdle = 393;  // Current per all leds at 0% white
 		uint16_t MA_FOR_ESP = 0; // My RP2040 is powered by USB
 
-		uint32_t puPerMilliamp = 195075 / milliampsPerLed;
+		uint32_t puPerMilliamp = 765 / milliampsPerLed;
 		uint32_t powerBudget = (ablMilliampsMax - MA_FOR_ESP) * puPerMilliamp; //100mA for ESP power
 
-		if (powerBudget > puPerMilliamp * pLen) { //each LED uses about 1mA in standby, exclude that from power budget
-			powerBudget -= puPerMilliamp * pLen;
+		if (powerBudget > milliampsIdle) {
+			//each LED uses about 1mA in standby, exclude that from power budget
+			powerBudget -= milliampsIdle;
 		} else {
 			powerBudget = 0;
 		}
 
 		uint32_t powerSum = 0;
-		for (size_t i = 0; i < size; i++) { // loop over all LEDs
+		for (size_t i = 0; i < size; i++) {
+			// loop over all the LEDs buffer and sum all the brightnesses.
+			// 374850 (490*3*255) is the max possible value here.
 			powerSum += buffer[i];
 		}
 
-		if (powerSum == 0) { // Nothing to do here
+		if (powerSum == 0) {
+			// Nothing to do here
 			return;
 		}
 
-		// powerSum has all the values of channels summed (max would be pLen*765 as white is excluded) so convert to milliAmps
-		powerSum = (powerSum * milliampsPerLed) / 765;
+		// powerSum has all the values of channels summed (max would be pLen*765), so convert to milliAmps
+		powerSum = (powerSum * milliampsPerLed / 765);
 
 		if (powerSum > powerBudget) //scale brightness down to stay in current limit
 		{
@@ -433,7 +438,8 @@ class Neopixel : public LedDriver, public DmaClient
 			uint16_t scaleI = (uint16_t) (scale * 255);
 			uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
-			for (size_t i = 0; i < size; i++) { // loop over all LEDs
+			for (size_t i = 0; i < size; i++) {
+				// loop over all LEDs and scale down brightness
 				buffer[i] = scale8(buffer[i], scaleB);
 			}
 		}
