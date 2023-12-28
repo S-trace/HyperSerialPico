@@ -402,40 +402,44 @@ class Neopixel : public LedDriver, public DmaClient
 		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
 		//so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
 
+		// Settings, adjust for your setup:
 		uint16_t pLen = 490; // leds count
-		uint16_t ablMilliampsMax = 5000; // Max PSU Current
-		uint16_t milliampsPerLed = 38; // Current per single led at 100% white
-		uint16_t milliampsIdle = 393;  // Current per all leds at 0% white
-		uint16_t MA_FOR_ESP = 0; // My RP2040 is powered by USB
+		uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
+		uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
+		uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
+		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
+		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
+		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
 
-		uint32_t puPerMilliamp = 765 / milliampsPerLed;
-		uint32_t powerBudget = (ablMilliampsMax - MA_FOR_ESP) * puPerMilliamp; //100mA for ESP power
+		// Logic, do not change anything below
+		uint32_t puPerMilliamp = 765 / milliampsPerLed; // ~20.13
+		uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
 
-		if (powerBudget > milliampsIdle) {
+		if (puPowerBudget > milliampsIdle) {
 			//each LED uses about 1mA in standby, exclude that from power budget
-			powerBudget -= milliampsIdle;
+			puPowerBudget -= milliampsIdle * puPerMilliamp;
 		} else {
-			powerBudget = 0;
+			puPowerBudget = 0;
 		}
 
-		uint32_t powerSum = 0;
+		uint32_t puPowerSum = 0;
 		for (size_t i = 0; i < size; i++) {
-			// loop over all the LEDs buffer and sum all the brightnesses.
-			// 374850 (490*3*255) is the max possible value here.
-			powerSum += buffer[i];
+			// loop over all the LEDs buffer and sum all the brightnesses as PUs.
+			// 374850 (490*3*255) is the max possible value here, so uint32 is OK here.
+			puPowerSum += buffer[i];
 		}
 
-		if (powerSum == 0) {
-			// Nothing to do here
+		if (puPowerSum == 0) {
+			// Nothing to do here - all the strip is completely black
 			return;
 		}
 
-		// powerSum has all the values of channels summed (max would be pLen*765), so convert to milliAmps
-		powerSum = (powerSum * milliampsPerLed / 765);
+		// puPowerSum has all the values of channels summed (max would be pLen*765), so convert to milliAmps
+		puPowerSum = (puPowerSum / 765 * milliampsPerLed);
 
-		if (powerSum > powerBudget) //scale brightness down to stay in current limit
+		if (puPowerSum > puPowerBudget) //scale brightness down to stay in current limit
 		{
-			float scale = (float)powerBudget / (float)powerSum;
+			float scale = (float)puPowerBudget / (float)puPowerSum;
 			uint16_t scaleI = (uint16_t) (scale * 255);
 			uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
