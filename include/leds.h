@@ -370,6 +370,7 @@ class Neopixel : public LedDriver, public DmaClient
 	/// @note Takes 2 clocks on ARM
 	inline __attribute__((always_inline)) uint8_t scale8( uint8_t i, uint8_t scale)
 	{
+	#define SCALE8_C 1
 	#if SCALE8_C == 1
 	return (((uint16_t)i) * (1+(uint16_t)(scale))) >> 8;
 	#else
