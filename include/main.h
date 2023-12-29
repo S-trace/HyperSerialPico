@@ -32,7 +32,6 @@
 #define HELLO_MESSAGE "\r\nWelcome!\r\nAwa driver 9.\r\n"
 
 #include "calibration.h"
-#include "statistics.h"
 #include "base.h"
 #include "framestate.h"
 

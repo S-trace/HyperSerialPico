@@ -28,6 +28,8 @@
 #ifndef STATISTICS_H
 #define STATISTICS_H
 
+#include <cmath>
+
 // statistics (stats sent only when there is no communication)
 class
 {
@@ -39,7 +41,18 @@ class
 	uint16_t finalShowFrames = 0;
 	uint16_t finalTotalFrames = 0;
 
-	public:
+    // uint32_t will wrap here each 2^24 (16777216) frames, slightly more than 36 hours at 125 FPS.
+    // I'm think uint64_t is OK here.
+    uint64_t milliampsSum = 0;
+    uint64_t underpowerDesiredMilliampsSum = 0;
+    uint64_t underpowerFramesCount = 0;
+    uint64_t framesCount = 0;
+
+    long double underpowerPercentSum = 0; // The count of frames which were limited in current (only limitted frames).
+    long double powerPercentSum = 0; // The power cap sum for all the frames (including non-limited ones).
+
+
+public:
 		/**
 		 * @brief Get the start time of the current period
 		 *
@@ -67,6 +80,25 @@ class
 		{
 			showFrames++;
 		}
+
+        /**
+    * @brief The frame is processed by current limiter
+    *
+    */
+        void updatePowerStats(float powerPercentage, float underpowerPercentage,
+                              uint32_t milliamps, uint32_t underpowerDesiredMilliamps)
+        {
+            framesCount++;
+            if (std::fabs(1 - underpowerPercentage) < 0.00001) {
+                underpowerFramesCount++; // Count the frame as current-limited
+                underpowerPercentSum          += underpowerPercentage;       // How much percents it was limited
+                underpowerDesiredMilliampsSum += underpowerDesiredMilliamps; // How much current it wanted to consume
+            }
+
+            powerPercentSum += powerPercentage; // How bright is the frame
+            milliampsSum    += milliamps;       // How much current it should consume after limiting
+            underpowerDesiredMilliampsSum += underpowerDesiredMilliamps;
+        }
 
 		/**
 		 * @brief The frame is received correctly (not yet displayed)
@@ -115,18 +147,33 @@ class
 		 */
 		void print(unsigned long curTime, TaskHandle_t taskHandle1, TaskHandle_t taskHandle2)
 		{
-			char output[128];
+			char output[384];
 
 			startTime = curTime;
 			goodFrames = 0;
 			totalFrames = 0;
 			showFrames = 0;
 
-			snprintf(output, sizeof(output), "HyperHDR frames: %u (FPS), receiv.: %u, good: %u, incompl.: %u, mem1: %i, mem2: %i, heap: %zu\r\n",
-						finalShowFrames, finalTotalFrames,finalGoodFrames,(finalTotalFrames - finalGoodFrames),
+            // Will be between 0 and 1, so float is fine here.
+            float powerPercentAverage = (float) ((double) powerPercentSum / (double) framesCount) * 100;
+            // Up to 4.3 megaamperes, should be pretty enough. uint16_t will wrap after just 65.5 amperes
+            uint32_t milliampsAverage = (uint32_t)((double) milliampsSum / (double) framesCount);
+
+            float underpowerPercentAverage = (float) ((double) underpowerPercentSum / (double) underpowerFramesCount) * 100;
+            uint32_t underpowerRequestedMilliampsAverage = (uint32_t)((double) underpowerDesiredMilliampsSum / (double) underpowerFramesCount);
+
+			snprintf(output, sizeof(output), "HyperHDR frames: %u (FPS), receiv.: %u, good: %u, incompl.: %u, mem1: %i, mem2: %i, heap: %zu\r\n"
+                                             "Current limiter: %u frames total (%u underpower ones, %f%%),\r\n"
+                                             "                 %u mA average (%u mA avg were requested, %f%% more than you have for now)\r\n"
+                                             "                 %f%% average load (limitted by %f%%)\r\n",
+                     finalShowFrames, finalTotalFrames, finalGoodFrames, (finalTotalFrames - finalGoodFrames),
 						(taskHandle1 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle1) : 0,
 						(taskHandle2 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle2) : 0,
-						xPortGetFreeHeapSize());
+                     xPortGetFreeHeapSize(),
+                     framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount,
+                     milliampsAverage, underpowerRequestedMilliampsAverage, underpowerRequestedMilliampsAverage * 100 / milliampsAverage,
+                     powerPercentAverage, underpowerPercentAverage
+                     );
 			printf(output);
 
 			#if defined(NEOPIXEL_RGBW)
@@ -149,7 +196,15 @@ class
 			goodFrames = 0;
 			totalFrames = 0;
 			showFrames = 0;
-		}
+
+            milliampsSum = 0;
+            underpowerDesiredMilliampsSum = 0;
+            underpowerFramesCount = 0;
+            framesCount = 0;
+
+            underpowerPercentSum = 0;
+            powerPercentSum = 0;
+        }
 
 		void lightReset(unsigned long curTime, bool hasData)
 		{

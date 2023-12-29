@@ -579,18 +579,19 @@ class NeopixelParallelType : public NeopixelParallel
         //so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
 
         // Settings, adjust for your setup:
-        uint16_t milliampsPsuRatedMax = 8000; // Max PSU Current
+        uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
         // uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
         uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
         uint16_t milliampsPerLed = 36;        // Current per single led at 100% white (37mA minus idle current (0,8mA))
         // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
         uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
+        uint32_t puCountBeforeScale = puCount;
         uint32_t puCountAfterScale = 0;
 
         // Logic, do not change anything below
         uint8_t *data = (uint8_t*) pixelData;
 
-        uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
+        uint8_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
         uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
 
         if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
@@ -599,11 +600,11 @@ class NeopixelParallelType : public NeopixelParallel
         } else {
             puPowerBudget = 0;
         }
-
+        float scale = 1;
         if (puCount > puPowerBudget) {
             //scale brightness down to stay in current limit
-            float scale = (float)puPowerBudget / (float)puCount;
-            auto scaleI = (uint16_t) (scale * 255);
+            scale = (float)puPowerBudget / (float)puCount;
+            uint16_t scaleI = (uint16_t) (scale * 255);
             uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
             for (size_t i = 0; i < ledsNumber * 3; i++) {
@@ -613,6 +614,13 @@ class NeopixelParallelType : public NeopixelParallel
                 puCountAfterScale += newValue;
             }
         }
+        float powerPercentage = (float)puCountAfterScale / puPerMilliamp / milliampsPsuRatedMax;
+        statistics.updatePowerStats(
+                    powerPercentage,
+                    scale,
+                    milliampsIdle + (puCount - puCountAfterScale) / puPerMilliamp,
+                    milliampsIdle + puCount / puPerMilliamp
+                );
         return puCountAfterScale;
     }
 

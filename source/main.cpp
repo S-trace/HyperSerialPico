@@ -38,6 +38,7 @@
 #include "pico/stdio_usb.h"
 #include "pico/multicore.h"
 #include "pico/sem.h"
+#include "statistics.h"
 #include "leds.h"
 
 
