@@ -355,7 +355,7 @@ class Neopixel : public LedDriver, public DmaClient
 		return buffer;
 	}
 
-	protected:
+	public:
 	void renderDma(bool resetBuffer)
 	{
 		if (isDmaBusy)
@@ -403,7 +403,6 @@ class NeopixelType : public Neopixel
 
 class NeopixelParallel
 {
-	static Neopixel *muxer;
 	static int instances;
 
 	protected:
@@ -412,6 +411,8 @@ class NeopixelParallel
 	static uint8_t* buffer;
 
 	public:
+	static Neopixel *muxer;
+	int ledsNumber;
 
 	NeopixelParallel(NeopixelSubtype _type, size_t pixelSize, uint64_t _resetTime, int _ledsNumber, int _pin):
 					myLaneMask(1 << (instances++))
@@ -421,6 +422,7 @@ class NeopixelParallel
 		delete muxer;
 		muxer = new Neopixel(_type, instances, _resetTime, maxLeds, _pin, maxLeds * 8 * pixelSize );
 		buffer = muxer->getBufferMemory();
+		ledsNumber = _ledsNumber;
 	}
 
 	~NeopixelParallel()
@@ -457,6 +459,8 @@ template<NeopixelSubtype _type, int RESET_TIME, typename colorData>
 class NeopixelParallelType : public NeopixelParallel
 {
 	uint32_t lut[16];
+	uint32_t puCount = 0; // Power units counter
+	colorData *pixelData = reinterpret_cast<colorData *> (buffer + maxLeds * 7 * sizeof(colorData));
 
 	public:
 
@@ -469,32 +473,65 @@ class NeopixelParallelType : public NeopixelParallel
 			for (uint8_t b = 0; b < 4; b++)
 				*(target++) = (uint8_t) ((a & (0b00000001 << b)) ? myLaneMask : 0);
 		}
+        for (uint8_t a = 0; a < 16; a++)
+        {
+            uint8_t* target = reinterpret_cast<uint8_t*>(&(lut[a]));
+            for (uint8_t b = 0; b < 4; b++)
+                *(target++) = (uint8_t) ((a & (0b00000001 << b)) ? myLaneMask : 0);
+        }
 	}
 
-	void SetPixel(int index, colorData color)
-	{
-		if (index >= maxLeds)
-			return;
+    void SetPixel(int index, colorData color)
+    {
+        if (index >= maxLeds)
+            return;
 
-		uint8_t* source = reinterpret_cast<uint8_t*>(&color);
-		uint32_t* target = reinterpret_cast<uint32_t*>(&(buffer[(index + 1) * 8 * sizeof(colorData)]));
-
-		for(int i = 0; i < sizeof(colorData); i++)
-		{
-			*(--target) |= lut[ *(source) & 0b00001111];
-			*(--target) |= lut[ *(source++) >> 4];
-		}
-	}
+        uint8_t* source = reinterpret_cast<uint8_t*>(&color);
+        for(int i = 0; i < sizeof(colorData); i++)
+        {
+            puCount += *(source);
+        }
+        // Store pixel data near the buffer end for now - it will be converted to bitstream later
+        *(reinterpret_cast<colorData*>(buffer) + 7 * ledsNumber + index) = color;
+    }
 
 	void renderAllLanes()
 	{
-		// Do the current limitting after all other transformations, right before sending data to LEDs - this is important!
-		estimateCurrentAndLimitBri(buffer, dmaSize);
-
-		muxer->renderDma(true);
-	}
+		// Do the current limitting after all other transformations, right before sending data to LEDs - this is critical!
+		estimateCurrentAndLimitBri();
+        convertPixelDataToBitstream();
+        muxer->renderDma(true);
+        puCount = 0; // Reset Power Units each frame
+    }
 
 	private:
+    void convertPixelToBitstream(size_t index, uint8_t *source, uint32_t *target)
+    {
+        for (int j = 0; j < sizeof(colorData); j++) {
+            *(--target) |= lut[*source & 0b00001111];
+            *(--target) |= lut[*source >> 4];
+            *(source++) = 0; // Clean up the end of the buffer
+        }
+    }
+
+    void convertPixelDataToBitstream()
+    {
+        uint8_t *lastPixelData = buffer + 7 * maxLeds * sizeof(colorData) + (maxLeds - 1) * sizeof(colorData);
+        colorData lastData = *(reinterpret_cast<colorData *>(lastPixelData));
+        printf("lastData: %d %d %d\n", lastData.R, lastData.G, lastData.B);
+        uint32_t index;
+        for (index = 0; index < ledsNumber; index++)
+        {
+            uint8_t  *source = buffer + 7 * ledsNumber * sizeof(colorData) + index * sizeof(colorData);
+            uint32_t *target = reinterpret_cast<uint32_t *>(&(buffer[(index + 1) * 8 * sizeof(colorData)]));
+            convertPixelToBitstream(index, source, target);
+        }
+
+        if (ledsNumber == maxLeds) {
+            uint32_t *target = reinterpret_cast<uint32_t *>(&(buffer[maxLeds * 8 * sizeof(colorData)]));
+            convertPixelToBitstream(index, reinterpret_cast<uint8_t *>(&lastData), target);
+        }
+    }
 
 	/// Origin: https://github.com/FastLED/FastLED/blob/3adbeb3fed67d4ee1681af546d86090a0cddf7b1/src/lib8tion/scale8.h#L22
 	/// Stripped down unused AVR version and buggy version
@@ -533,75 +570,53 @@ class NeopixelParallelType : public NeopixelParallel
 	#endif
 	}
 
-	void printHexBuffer(unsigned char *buffer, size_t len) {
-		printf("Buffer at %p, %d bytes: ", buffer, len);
-		for (size_t i = 0; i < len; i++) {
-			printf("%02X ", buffer[i]);
-		}
-		printf("\n");
-	}
-
 	/// Origin: https://github.com/Aircoookie/WLED/blob/5ebc345e95e2a68d0799d23acf7acc27d94b06a9/wled00/FX_fcn.cpp#L1267
 	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
-	void estimateCurrentAndLimitBri(uint8_t *pixelData, uint32_t size) {
-		//power limit calculation
-		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 38mA)
-		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
-		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
 
-		static size_t frame_number;
+    uint32_t estimateCurrentAndLimitBri() {
+        //power limit calculation
+        //each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 53mA)
+        //one PU is the power it takes to have 1 channel 1 step brighter per brightness step
+        //so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
 
-		// Settings, adjust for your setup:
-		uint16_t milliampsPsuRatedMax = 5000 / 2;    // Max PSU Current
-		// uint16_t milliampsPsuPulseMax = 7900 / 2; // Max PSU Pulse Current (when jumping 0% to 100%)
-		uint16_t milliampsIdle = 393 / 2;            // Current per all leds at 0% white
-		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
-		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
-		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
+        // Settings, adjust for your setup:
+        uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
+        // uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
+        uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
+        uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
+        // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
+        uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
+        uint32_t puCountAfterScale = 0;
 
-		// Logic, do not change anything below
-		uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
-		uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
+        // Logic, do not change anything below
+        uint8_t *data = (uint8_t*) pixelData;
 
-		if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
-			//each LED uses about 1mA in standby, exclude that from power budget
-			puPowerBudget -= milliampsIdle * puPerMilliamp;
-		} else {
-			puPowerBudget = 0;
-		}
+        uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
+        uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
 
-		uint32_t puPowerSum = 0;
-		for (size_t i = 0; i < size; i++) {
-			// loop over all the LEDs pixelData and sum all the brightnesses as PUs.
-			// 374850 (490 LEDs * 255 levels * 3 colors) is the max possible value here, so uint32 is OK.
-			puPowerSum += pixelData[i];
-		}
+        if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
+            //each LED uses about 1mA in standby, exclude that from power budget
+            puPowerBudget -= milliampsIdle * puPerMilliamp;
+        } else {
+            puPowerBudget = 0;
+        }
 
+        if (puCount > puPowerBudget) {
+            //scale brightness down to stay in current limit
+            float scale = (float)puPowerBudget / (float)puCount;
+            printf("scale=%f\n", scale);
+            auto scaleI = (uint16_t) (scale * 255);
+            uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
-		// if (puPowerSum == 0) {
-		// 	// Nothing to do here - all the strip is completely black
-		// 	return;
-		// }
-
-		uint8_t scaleB = 0;
-		if (puPowerSum > puPowerBudget) {
-			//scale brightness down to stay in current limit
-			double scale = (float)puPowerBudget / (float)puPowerSum;
-			auto scaleI = (uint16_t) (scale * 255);
-			scaleB = (scaleI > 255) ? 255 : scaleI;
-
-			for (size_t i = 0; i < size; i++) {
-				// loop over all LEDs and scale down brightness
-				pixelData[i] = scale8(pixelData[i], scaleB);
-			}
-		}
-
-		frame_number++;
-		if (frame_number % 256 == 0) {
-			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\nLUT: ", puPowerBudget, puPowerSum, scaleB);
-			printHexBuffer(lut, sizeof(lut));
-		}
-	}
+            for (size_t i = 0; i < ledsNumber * 3; i++) {
+                // loop over all LEDs and scale down brightness
+                const uint8_t newValue = scale8(data[i], scaleB);
+                data[i] = newValue;
+                puCountAfterScale += newValue;
+            }
+        }
+        return puCountAfterScale;
+    }
 
 };
 
