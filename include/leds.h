@@ -394,6 +394,14 @@ class Neopixel : public LedDriver, public DmaClient
 	#endif
 	}
 
+	void printHexBuffer(unsigned char *buffer, size_t len) {
+		printf("Buffer at %p, %d bytes: ", buffer, len);
+		for (size_t i = 0; i < len; i++) {
+			printf("%02X ", buffer[i]);
+		}
+		printf("\n");
+	}
+
 	/// Origin: https://github.com/Aircoookie/WLED/blob/5ebc345e95e2a68d0799d23acf7acc27d94b06a9/wled00/FX_fcn.cpp#L1267
 	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
 	void estimateCurrentAndLimitBri(uint8_t *pixelData, uint32_t size) {
@@ -402,12 +410,12 @@ class Neopixel : public LedDriver, public DmaClient
 		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
 		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
 
-		static size_t frame_number = 0;
+		static size_t frame_number;
 
 		// Settings, adjust for your setup:
-		uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
-		// uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
-		uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
+		uint16_t milliampsPsuRatedMax = 5000 / 2;    // Max PSU Current
+		// uint16_t milliampsPsuPulseMax = 7900 / 2; // Max PSU Pulse Current (when jumping 0% to 100%)
+		uint16_t milliampsIdle = 393 / 2;            // Current per all leds at 0% white
 		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
 		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
 		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
@@ -431,12 +439,12 @@ class Neopixel : public LedDriver, public DmaClient
 		}
 
 
-		if (puPowerSum == 0) {
-			// Nothing to do here - all the strip is completely black
-			return;
-		}
+		// if (puPowerSum == 0) {
+		// 	// Nothing to do here - all the strip is completely black
+		// 	return;
+		// }
 
-		uint8_t scaleB;
+		uint8_t scaleB = 0;
 		if (puPowerSum > puPowerBudget) {
 			//scale brightness down to stay in current limit
 			double scale = (float)puPowerBudget / (float)puPowerSum;
@@ -451,7 +459,8 @@ class Neopixel : public LedDriver, public DmaClient
 
 		frame_number++;
 		if (frame_number % 256 == 0) {
-			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\n", puPowerBudget, puPowerSum, scaleB);
+			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\nLUT: ", puPowerBudget, puPowerSum, scaleB);
+			printHexBuffer(lut, sizeof(lut));
 		}
 	}
 
