@@ -498,7 +498,7 @@ class NeopixelParallelType : public NeopixelParallel
 	void renderAllLanes()
 	{
 		// Do the current limitting after all other transformations, right before sending data to LEDs - this is critical!
-//		estimateCurrentAndLimitBri();
+		estimateCurrentAndLimitBri();
         convertPixelDataToBitstream();
         muxer->renderDma(true);
         puCount = 0; // Reset Power Units each frame
@@ -518,7 +518,6 @@ class NeopixelParallelType : public NeopixelParallel
     {
         uint8_t *lastPixelData = buffer + 7 * maxLeds * sizeof(colorData) + (maxLeds - 1) * sizeof(colorData);
         colorData lastData = *(reinterpret_cast<colorData *>(lastPixelData));
-        printf("lastData: %d %d %d\n", lastData.R, lastData.G, lastData.B);
         uint32_t index;
         for (index = 0; index < ledsNumber; index++)
         {
@@ -604,7 +603,7 @@ class NeopixelParallelType : public NeopixelParallel
         if (puCount > puPowerBudget) {
             //scale brightness down to stay in current limit
             float scale = (float)puPowerBudget / (float)puCount;
-            printf("scale=%f\n", scale);
+//            printf("%f\n", scale);
             auto scaleI = (uint16_t) (scale * 255);
             uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
