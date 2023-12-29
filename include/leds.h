@@ -402,6 +402,8 @@ class Neopixel : public LedDriver, public DmaClient
 		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
 		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
 
+		static size_t frame_number = 0;
+
 		// Settings, adjust for your setup:
 		uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
 		// uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
@@ -428,21 +430,28 @@ class Neopixel : public LedDriver, public DmaClient
 			puPowerSum += pixelData[i];
 		}
 
+
 		if (puPowerSum == 0) {
 			// Nothing to do here - all the strip is completely black
 			return;
 		}
 
+		uint8_t scaleB;
 		if (puPowerSum > puPowerBudget) {
 			//scale brightness down to stay in current limit
 			double scale = (float)puPowerBudget / (float)puPowerSum;
 			auto scaleI = (uint16_t) (scale * 255);
-			uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
+			scaleB = (scaleI > 255) ? 255 : scaleI;
 
 			for (size_t i = 0; i < size; i++) {
 				// loop over all LEDs and scale down brightness
 				pixelData[i] = scale8(pixelData[i], scaleB);
 			}
+		}
+
+		frame_number++;
+		if (frame_number % 256 == 0) {
+			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\n", puPowerBudget, puPowerSum, scaleB);
 		}
 	}
 
