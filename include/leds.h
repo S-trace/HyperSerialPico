@@ -396,26 +396,25 @@ class Neopixel : public LedDriver, public DmaClient
 
 	/// Origin: https://github.com/Aircoookie/WLED/blob/5ebc345e95e2a68d0799d23acf7acc27d94b06a9/wled00/FX_fcn.cpp#L1267
 	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
-	void estimateCurrentAndLimitBri(uint8_t *buffer, uint32_t size) {
+	void estimateCurrentAndLimitBri(uint8_t *pixelData, uint32_t size) {
 		//power limit calculation
-		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 53mA)
+		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 38mA)
 		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
-		//so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
+		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
 
 		// Settings, adjust for your setup:
-		uint16_t pLen = 490; // leds count
 		uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
-		uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
+		// uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
 		uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
 		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
 		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
 		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
 
 		// Logic, do not change anything below
-		uint32_t puPerMilliamp = 765 / milliampsPerLed; // ~20.13
+		uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
 		uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
 
-		if (puPowerBudget > milliampsIdle) {
+		if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
 			//each LED uses about 1mA in standby, exclude that from power budget
 			puPowerBudget -= milliampsIdle * puPerMilliamp;
 		} else {
@@ -424,9 +423,9 @@ class Neopixel : public LedDriver, public DmaClient
 
 		uint32_t puPowerSum = 0;
 		for (size_t i = 0; i < size; i++) {
-			// loop over all the LEDs buffer and sum all the brightnesses as PUs.
-			// 374850 (490*3*255) is the max possible value here, so uint32 is OK here.
-			puPowerSum += buffer[i];
+			// loop over all the LEDs pixelData and sum all the brightnesses as PUs.
+			// 374850 (490 LEDs * 255 levels * 3 colors) is the max possible value here, so uint32 is OK.
+			puPowerSum += pixelData[i];
 		}
 
 		if (puPowerSum == 0) {
@@ -434,18 +433,15 @@ class Neopixel : public LedDriver, public DmaClient
 			return;
 		}
 
-		// puPowerSum has all the values of channels summed (max would be pLen*765), so convert to milliAmps
-		puPowerSum = (puPowerSum / 765 * milliampsPerLed);
-
-		if (puPowerSum > puPowerBudget) //scale brightness down to stay in current limit
-		{
-			float scale = (float)puPowerBudget / (float)puPowerSum;
-			uint16_t scaleI = (uint16_t) (scale * 255);
+		if (puPowerSum > puPowerBudget) {
+			//scale brightness down to stay in current limit
+			double scale = (float)puPowerBudget / (float)puPowerSum;
+			auto scaleI = (uint16_t) (scale * 255);
 			uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
 			for (size_t i = 0; i < size; i++) {
 				// loop over all LEDs and scale down brightness
-				buffer[i] = scale8(buffer[i], scaleB);
+				pixelData[i] = scale8(pixelData[i], scaleB);
 			}
 		}
 	}
