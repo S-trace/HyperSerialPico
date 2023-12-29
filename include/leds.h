@@ -582,7 +582,7 @@ class NeopixelParallelType : public NeopixelParallel
         uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
         // uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
         uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
-        uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
+        uint16_t milliampsPerLed = 36;        // Current per single led at 100% white (37mA minus idle current (0,8mA))
         // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
         uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
         uint32_t puCountAfterScale = 0;
@@ -603,7 +603,6 @@ class NeopixelParallelType : public NeopixelParallel
         if (puCount > puPowerBudget) {
             //scale brightness down to stay in current limit
             float scale = (float)puPowerBudget / (float)puCount;
-//            printf("%f\n", scale);
             auto scaleI = (uint16_t) (scale * 255);
             uint8_t scaleB = (scaleI > 255) ? 255 : scaleI;
 
