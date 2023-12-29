@@ -147,7 +147,7 @@ public:
 		 */
 		void print(unsigned long curTime, TaskHandle_t taskHandle1, TaskHandle_t taskHandle2)
 		{
-			char output[384];
+			char output[128];
 
 			startTime = curTime;
 			goodFrames = 0;
@@ -162,24 +162,30 @@ public:
             float underpowerPercentAverage = (float) ((double) underpowerPercentSum / (double) underpowerFramesCount) * 100;
             uint32_t underpowerRequestedMilliampsAverage = (uint32_t)((double) underpowerDesiredMilliampsSum / (double) underpowerFramesCount);
 
-			snprintf(output, sizeof(output), "HyperHDR frames: %u (FPS), receiv.: %u, good: %u, incompl.: %u, mem1: %i, mem2: %i, heap: %zu\r\n"
-                                             "Current limiter: %u frames total (%u underpower ones, %f%%),\r\n"
-                                             "                 %u mA average (%u mA avg were requested, %f%% more than you have for now)\r\n"
-                                             "                 %f%% average load (limitted by %f%%)\r\n",
+			snprintf(output, sizeof(output), "HyperHDR frames: %u (FPS), receiv.: %u, good: %u, incompl.: %u, mem1: %i, mem2: %i, heap: %zu\r\n",
                      finalShowFrames, finalTotalFrames, finalGoodFrames, (finalTotalFrames - finalGoodFrames),
 						(taskHandle1 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle1) : 0,
 						(taskHandle2 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle2) : 0,
-                     xPortGetFreeHeapSize(),
-                     framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount,
-                     milliampsAverage, underpowerRequestedMilliampsAverage, underpowerRequestedMilliampsAverage * 100 / milliampsAverage,
-                     powerPercentAverage, underpowerPercentAverage
+                     xPortGetFreeHeapSize()
                      );
-			printf(output);
+            printf(output);
+
+            snprintf(output, sizeof(output),"Current limiter: %u frames total (%u underpower ones, %f%%),\r\n",
+                     framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount);
+            printf(output);
+
+            snprintf(output, sizeof(output), "%u mA average (%u mA avg were requested, %f%% more than you have for now)\r\n",
+                     milliampsAverage, underpowerRequestedMilliampsAverage, underpowerRequestedMilliampsAverage * 100 / milliampsAverage);
+            printf(output);
+
+            snprintf(output, sizeof(output), "%f%% average load (limitted by %f%%)\r\n",
+                     powerPercentAverage, underpowerPercentAverage);
+            printf(output);
 
 			#if defined(NEOPIXEL_RGBW)
 				calibrationConfig.printCalibration();
 			#endif
-		}
+        }
 
 		/**
 		 * @brief Reset statistics
