@@ -498,7 +498,7 @@ class NeopixelParallelType : public NeopixelParallel
 	void renderAllLanes()
 	{
 		// Do the current limitting after all other transformations, right before sending data to LEDs - this is critical!
-		estimateCurrentAndLimitBri();
+//		estimateCurrentAndLimitBri();
         convertPixelDataToBitstream();
         muxer->renderDma(true);
         puCount = 0; // Reset Power Units each frame
