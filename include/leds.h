@@ -489,7 +489,7 @@ class NeopixelParallelType : public NeopixelParallel
         uint8_t* source = reinterpret_cast<uint8_t*>(&color);
         for(int i = 0; i < sizeof(colorData); i++)
         {
-            puCount += *(source);
+            puCount += *(source + i);
         }
         // Store pixel data near the buffer end for now - it will be converted to bitstream later
         *(reinterpret_cast<colorData*>(buffer) + 7 * ledsNumber + index) = color;
