@@ -356,123 +356,12 @@ class Neopixel : public LedDriver, public DmaClient
 	}
 
 	protected:
-
-	/// Origin: https://github.com/FastLED/FastLED/blob/3adbeb3fed67d4ee1681af546d86090a0cddf7b1/src/lib8tion/scale8.h#L22
-	/// Stripped down unused AVR version and buggy version
-	///
-	/// Scale one byte by a second one, which is treated as
-	/// the numerator of a fraction whose denominator is 256.
-	///
-	/// In other words, it computes i * (scale / 256)
-	/// @param i input value to scale
-	/// @param scale scale factor, in n/256 units
-	/// @returns scaled value
-	/// @note Takes 2 clocks on ARM
-	inline __attribute__((always_inline)) uint8_t scale8( uint8_t i, uint8_t scale)
-	{
-	#define SCALE8_C 1
-	#if SCALE8_C == 1
-	return (((uint16_t)i) * (1+(uint16_t)(scale))) >> 8;
-	#else
-	asm volatile(
-		// Multiply 8-bit i * 8-bit scale, giving 16-bit r1,r0
-			"mul %0, %1          \n\t"
-			// Add i to r0, possibly setting the carry flag
-			"add r0, %0         \n\t"
-			// load the immediate 0 into i (note, this does _not_ touch any flags)
-			"ldi %0, 0x00       \n\t"
-			// walk and chew gum at the same time
-			"adc %0, r1          \n\t"
-			"clr __zero_reg__    \n\t"
-
-			: "+a" (i)      /* writes to i */
-			: "a"  (scale)  /* uses scale */
-			: "r0", "r1"    /* clobbers r0, r1 */
-			);
-	/* Return the result */
-	return i;
-	#endif
-	}
-
-	void printHexBuffer(unsigned char *buffer, size_t len) {
-		printf("Buffer at %p, %d bytes: ", buffer, len);
-		for (size_t i = 0; i < len; i++) {
-			printf("%02X ", buffer[i]);
-		}
-		printf("\n");
-	}
-
-	/// Origin: https://github.com/Aircoookie/WLED/blob/5ebc345e95e2a68d0799d23acf7acc27d94b06a9/wled00/FX_fcn.cpp#L1267
-	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
-	void estimateCurrentAndLimitBri(uint8_t *pixelData, uint32_t size) {
-		//power limit calculation
-		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 38mA)
-		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
-		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
-
-		static size_t frame_number;
-
-		// Settings, adjust for your setup:
-		uint16_t milliampsPsuRatedMax = 5000 / 2;    // Max PSU Current
-		// uint16_t milliampsPsuPulseMax = 7900 / 2; // Max PSU Pulse Current (when jumping 0% to 100%)
-		uint16_t milliampsIdle = 393 / 2;            // Current per all leds at 0% white
-		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
-		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
-		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
-
-		// Logic, do not change anything below
-		uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
-		uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
-
-		if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
-			//each LED uses about 1mA in standby, exclude that from power budget
-			puPowerBudget -= milliampsIdle * puPerMilliamp;
-		} else {
-			puPowerBudget = 0;
-		}
-
-		uint32_t puPowerSum = 0;
-		for (size_t i = 0; i < size; i++) {
-			// loop over all the LEDs pixelData and sum all the brightnesses as PUs.
-			// 374850 (490 LEDs * 255 levels * 3 colors) is the max possible value here, so uint32 is OK.
-			puPowerSum += pixelData[i];
-		}
-
-
-		// if (puPowerSum == 0) {
-		// 	// Nothing to do here - all the strip is completely black
-		// 	return;
-		// }
-
-		uint8_t scaleB = 0;
-		if (puPowerSum > puPowerBudget) {
-			//scale brightness down to stay in current limit
-			double scale = (float)puPowerBudget / (float)puPowerSum;
-			auto scaleI = (uint16_t) (scale * 255);
-			scaleB = (scaleI > 255) ? 255 : scaleI;
-
-			for (size_t i = 0; i < size; i++) {
-				// loop over all LEDs and scale down brightness
-				pixelData[i] = scale8(pixelData[i], scaleB);
-			}
-		}
-
-		frame_number++;
-		if (frame_number % 256 == 0) {
-			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\nLUT: ", puPowerBudget, puPowerSum, scaleB);
-			printHexBuffer(lut, sizeof(lut));
-		}
-	}
-
 	void renderDma(bool resetBuffer)
 	{
 		if (isDmaBusy)
 			return;
 
 		isDmaBusy = true;
-
-		// Do the current limitting after all other transformations, right before sending data to LEDs - this is important!
-		estimateCurrentAndLimitBri(buffer, dmaSize);
 
 		uint64_t currentTime = time_us_64();
 		if (currentTime < resetTime + lastRenderTime)
@@ -596,6 +485,124 @@ class NeopixelParallelType : public NeopixelParallel
 			*(--target) |= lut[ *(source++) >> 4];
 		}
 	}
+
+	void renderAllLanes()
+	{
+		// Do the current limitting after all other transformations, right before sending data to LEDs - this is important!
+		estimateCurrentAndLimitBri(buffer, dmaSize);
+
+		muxer->renderDma(true);
+	}
+
+	private:
+
+	/// Origin: https://github.com/FastLED/FastLED/blob/3adbeb3fed67d4ee1681af546d86090a0cddf7b1/src/lib8tion/scale8.h#L22
+	/// Stripped down unused AVR version and buggy version
+	///
+	/// Scale one byte by a second one, which is treated as
+	/// the numerator of a fraction whose denominator is 256.
+	///
+	/// In other words, it computes i * (scale / 256)
+	/// @param i input value to scale
+	/// @param scale scale factor, in n/256 units
+	/// @returns scaled value
+	/// @note Takes 2 clocks on ARM
+	inline __attribute__((always_inline)) uint8_t scale8( uint8_t i, uint8_t scale)
+	{
+	#define SCALE8_C 1
+	#if SCALE8_C == 1
+	return (((uint16_t)i) * (1+(uint16_t)(scale))) >> 8;
+	#else
+	asm volatile(
+		// Multiply 8-bit i * 8-bit scale, giving 16-bit r1,r0
+			"mul %0, %1          \n\t"
+			// Add i to r0, possibly setting the carry flag
+			"add r0, %0         \n\t"
+			// load the immediate 0 into i (note, this does _not_ touch any flags)
+			"ldi %0, 0x00       \n\t"
+			// walk and chew gum at the same time
+			"adc %0, r1          \n\t"
+			"clr __zero_reg__    \n\t"
+
+			: "+a" (i)      /* writes to i */
+			: "a"  (scale)  /* uses scale */
+			: "r0", "r1"    /* clobbers r0, r1 */
+			);
+	/* Return the result */
+	return i;
+	#endif
+	}
+
+	void printHexBuffer(unsigned char *buffer, size_t len) {
+		printf("Buffer at %p, %d bytes: ", buffer, len);
+		for (size_t i = 0; i < len; i++) {
+			printf("%02X ", buffer[i]);
+		}
+		printf("\n");
+	}
+
+	/// Origin: https://github.com/Aircoookie/WLED/blob/5ebc345e95e2a68d0799d23acf7acc27d94b06a9/wled00/FX_fcn.cpp#L1267
+	/// Stripped down unused WackyWS2815PowerModel and the WLED platform code. Hardcode values for now.
+	void estimateCurrentAndLimitBri(uint8_t *pixelData, uint32_t size) {
+		//power limit calculation
+		//each LED can draw up 765 (255 levels * 3 colors) "power units" (approx. 38mA)
+		//one PU is the power it takes to have 1 channel 1 step brighter per brightness step
+		//so A=2,R=255,G=0,B=0 would use 128 PU per LED (1mA is about 20 PU)
+
+		static size_t frame_number;
+
+		// Settings, adjust for your setup:
+		uint16_t milliampsPsuRatedMax = 5000 / 2;    // Max PSU Current
+		// uint16_t milliampsPsuPulseMax = 7900 / 2; // Max PSU Pulse Current (when jumping 0% to 100%)
+		uint16_t milliampsIdle = 393 / 2;            // Current per all leds at 0% white
+		uint16_t milliampsPerLed = 37;        // Current per single led at 100% white (38mA minus idle current (0,8mA))
+		                                      // A possible overload is 0,2mA * 490 LEDs == 98mA, which is OK for 5A PSU
+		uint16_t milliampsForController = 0;  // My RP2040 is powered by USB, so there is no current draw from PSU
+
+		// Logic, do not change anything below
+		uint32_t puPerMilliamp = (255 * 3) / milliampsPerLed; // ~20.13
+		uint32_t puPowerBudget = (milliampsPsuRatedMax - milliampsForController) * puPerMilliamp;
+
+		if (puPowerBudget > (milliampsIdle * puPerMilliamp)) {
+			//each LED uses about 1mA in standby, exclude that from power budget
+			puPowerBudget -= milliampsIdle * puPerMilliamp;
+		} else {
+			puPowerBudget = 0;
+		}
+
+		uint32_t puPowerSum = 0;
+		for (size_t i = 0; i < size; i++) {
+			// loop over all the LEDs pixelData and sum all the brightnesses as PUs.
+			// 374850 (490 LEDs * 255 levels * 3 colors) is the max possible value here, so uint32 is OK.
+			puPowerSum += pixelData[i];
+		}
+
+
+		// if (puPowerSum == 0) {
+		// 	// Nothing to do here - all the strip is completely black
+		// 	return;
+		// }
+
+		uint8_t scaleB = 0;
+		if (puPowerSum > puPowerBudget) {
+			//scale brightness down to stay in current limit
+			double scale = (float)puPowerBudget / (float)puPowerSum;
+			auto scaleI = (uint16_t) (scale * 255);
+			scaleB = (scaleI > 255) ? 255 : scaleI;
+
+			for (size_t i = 0; i < size; i++) {
+				// loop over all LEDs and scale down brightness
+				pixelData[i] = scale8(pixelData[i], scaleB);
+			}
+		}
+
+		frame_number++;
+		if (frame_number % 256 == 0) {
+			printf("puPowerBudget=%d puPowerSum = %d scaleB = %d\nLUT: ", puPowerBudget, puPowerSum, scaleB);
+			printHexBuffer(lut, sizeof(lut));
+		}
+	}
+
 };
 
 class Dotstar : public LedDriver, public DmaClient
