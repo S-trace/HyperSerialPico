@@ -162,26 +162,19 @@ public:
             float underpowerPercentAverage = (float) ((double) underpowerPercentSum / (double) underpowerFramesCount) * 100;
             uint32_t underpowerRequestedMilliampsAverage = (uint32_t)((double) underpowerDesiredMilliampsSum / (double) underpowerFramesCount);
 
-			snprintf(output, sizeof(output), "%u FPS, recv:%u, ok%u, bad:%u, mem1:%i, mem2:%i, heap:%zu\r\n",
+			snprintf(output, sizeof(output), "%u FPS, recv=%u, ok=%u bad=%u mem1=%i, mem2-%i, heap=%zu "
+                                             "fc=%u (upfc=%u, %0.2f%%), "
+                                             "%umA (%umA need, %f0.2%% low-power) "
+                                             "ppa=%0.2f%% uppa=%0.2f%%\r\n",
                      finalShowFrames, finalTotalFrames, finalGoodFrames, (finalTotalFrames - finalGoodFrames),
 						(taskHandle1 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle1) : 0,
 						(taskHandle2 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle2) : 0,
-                     xPortGetFreeHeapSize()
-                     );
+                     xPortGetFreeHeapSize(),
+                     framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount,
+                     powerPercentAverage, underpowerPercentAverage
+            );
             printf(output);
-
-            snprintf(output, sizeof(output),"fc=%u(upfc=%u,%0.2f%%),\r\n",
-                     framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount);
-            printf(output);
-
-            snprintf(output, sizeof(output), "%u mA (%u mA need, %f0.2%% more)\r\n",
-                     milliampsAverage, underpowerRequestedMilliampsAverage, underpowerRequestedMilliampsAverage * 100 / milliampsAverage);
-            printf(output);
-
-            snprintf(output, sizeof(output), "ppa=%0.2f%%, uppa=%0.2f%%\r\n",
-                     powerPercentAverage, underpowerPercentAverage);
-            printf(output);
-
+            
 			#if defined(NEOPIXEL_RGBW)
 				calibrationConfig.printCalibration();
 			#endif
