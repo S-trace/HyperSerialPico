@@ -162,7 +162,7 @@ public:
             float underpowerPercentAverage = (float) ((double) underpowerPercentSum / (double) underpowerFramesCount) * 100;
             uint32_t underpowerRequestedMilliampsAverage = (uint32_t)((double) underpowerDesiredMilliampsSum / (double) underpowerFramesCount);
 
-			snprintf(output, sizeof(output), "HyperHDR frames: %u (FPS), receiv.: %u, good: %u, incompl.: %u, mem1: %i, mem2: %i, heap: %zu\r\n",
+			snprintf(output, sizeof(output), "%u FPS, recv:%u, ok%u, bad:%u, mem1:%i, mem2:%i, heap:%zu\r\n",
                      finalShowFrames, finalTotalFrames, finalGoodFrames, (finalTotalFrames - finalGoodFrames),
 						(taskHandle1 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle1) : 0,
 						(taskHandle2 != nullptr) ? uxTaskGetStackHighWaterMark(taskHandle2) : 0,
@@ -170,15 +170,15 @@ public:
                      );
             printf(output);
 
-            snprintf(output, sizeof(output),"Current limiter: %u frames total (%u underpower ones, %f%%),\r\n",
+            snprintf(output, sizeof(output),"fc=%u(upfc=%u,%0.2f%%),\r\n",
                      framesCount, underpowerFramesCount, underpowerFramesCount * 100 / framesCount);
             printf(output);
 
-            snprintf(output, sizeof(output), "%u mA average (%u mA avg were requested, %f%% more than you have for now)\r\n",
+            snprintf(output, sizeof(output), "%u mA (%u mA need, %f0.2%% more)\r\n",
                      milliampsAverage, underpowerRequestedMilliampsAverage, underpowerRequestedMilliampsAverage * 100 / milliampsAverage);
             printf(output);
 
-            snprintf(output, sizeof(output), "%f%% average load (limitted by %f%%)\r\n",
+            snprintf(output, sizeof(output), "ppa=%0.2f%%, uppa=%0.2f%%\r\n",
                      powerPercentAverage, underpowerPercentAverage);
             printf(output);
 
