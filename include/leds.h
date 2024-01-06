@@ -579,7 +579,7 @@ class NeopixelParallelType : public NeopixelParallel
         //so A=2,R=255,G=0,B=0 would use 510 PU per LED (1mA is about 3700 PU)
 
         // Settings, adjust for your setup:
-        uint16_t milliampsPsuRatedMax = 5000; // Max PSU Current
+        uint16_t milliampsPsuRatedMax = 3000; // Max PSU Current
         // uint16_t milliampsPsuPulseMax = 7900; // Max PSU Pulse Current (when jumping 0% to 100%)
         uint16_t milliampsIdle = 393;         // Current per all leds at 0% white
         uint16_t milliampsPerLed = 36;        // Current per single led at 100% white (37mA minus idle current (0,8mA))
