@@ -155,9 +155,9 @@ class Base
 					else
 					{
 						#if defined(SECOND_SEGMENT_REVERSED)
-							ledStrip2->SetPixel(ledsNumber - pix - 1, inputColor);
+							ledStrip1->SetPixel(ledsNumber - pix - 1, inputColor);
 						#else
-							ledStrip2->SetPixel(pix - SECOND_SEGMENT_START_INDEX, inputColor);
+							ledStrip1->SetPixel(pix - SECOND_SEGMENT_START_INDEX, inputColor);
 						#endif
 					}
 				#else
